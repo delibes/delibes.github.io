@@ -1,0 +1,237 @@
+<!DOCTYPE HTML>
+<html>
+    <head>
+        <title>Chaos: The logistics map and bifurcation</title>
+        <link rel="stylesheet" href="style.css" type="text/css">
+        <style>
+            #bifurcation {
+                background-color: #fff;
+                cursor: crosshair;
+                display: block;
+                margin: 0 auto;
+                max-width: 100%;
+            }
+            #coords {
+                float: right;
+            }
+            body {
+                background-color: #f8f8f8;
+            }
+            form {
+                margin: .5em .5em;
+            }
+            @media (min-width: 420px) {
+                form {
+                    margin: .5em 5em;
+                }
+            }
+            input {
+                width: 5em;
+            }
+        </style>
+      
+        <script type="text/javascript">
+            const precision = 6;
+
+            let canvas, canvasData, ctx,
+                inputStartR, inputEndR,
+                inputStartX, inputEndX,
+                mouseStartX = 0, mouseEndX = 0,
+                mouseStartY = 0, mouseEndY = 0,
+                showBox = false;
+
+            // TODO more points based on inputStartX/EndX
+            function points(r = 2) {
+                const max = r < 3.565 ? 250 : 450;
+                var x = [0.5];
+                for (var n = 1; n < max; n++) {
+                    var prevx = x[n - 1]; 
+                    x[n] = r * prevx * (1 - prevx);
+                }
+                return r < 3.565 ? x.splice(200, 50) : x.splice(150, 300);
+            }
+
+            function checkInputs() {
+                const startRval = Number.parseFloat(inputStartR.value),
+                      endRval = Number.parseFloat(inputEndR.value),
+                      startXval = Number.parseFloat(inputStartX.value),
+                      endXval = Number.parseFloat(inputEndX.value);
+                // r - horizontal axis
+                if (startRval > 3.99) {
+                    inputStartR.value = 3.99;
+                }
+                if (endRval > 4.0) {
+                    inputEndR.value = 4.0;
+                }
+                if (startRval < 0 || isNaN(startRval)) {
+                    inputStartR.value = 0;
+                }
+                if (endRval < 0 || isNaN(endRval)) {
+                    inputEndR.value = 4.0;
+                }
+                // x - vertical axis
+                if (startXval > 1.0) {
+                    inputStartX.value = 0.9;
+                } else if (startXval < 0.0) {
+                    inputStartX.value = 0.0;
+                }
+                if (endXval > 1.0) {
+                    inputEndX.value = 1.0;
+                } else if (endXval < 0.0) {
+                    inputEndX.value = 0.1;
+                }
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'black';
+                ctx.lineWidth = 0.1;
+
+                const canvasData = ctx.getImageData(0, 0, canvas.width, canvas.height),
+                      startR = Number.parseFloat(inputStartR.value),
+                      endR = Number.parseFloat(inputEndR.value),
+                      startX = Number.parseFloat(inputStartX.value),
+                      endX = Number.parseFloat(inputEndX.value),
+                      step = (endR - startR) / canvas.width;
+
+                for (var i = startR; i < endR; i += step) {
+                    const vals = points(i);
+                    for (j = 0; j < vals.length; j++) {
+                        if (vals[j] < startX || vals[j] > endX) {
+                            continue;
+                        }
+                        const px = ((i - startR) * canvas.width / (endR - startR)) | 0;
+                        const py = ((canvas.height * (1 + (startX / (endX - startX)))) - (vals[j] * canvas.height / (endX - startX))) | 0;
+                        const index = (px + py * canvas.width) * 4;
+                        // canvasData.data[index + 0] = 0;
+                        // canvasData.data[index + 1] = 0;
+                        // canvasData.data[index + 2] = 0;
+                        canvasData.data[index + 3] = 255;
+                    }
+                }
+
+                ctx.putImageData(canvasData, 0, 0);
+            }
+
+            function mousemove(ev) {
+                const startR = Number.parseFloat(inputStartR.value),
+                      endR = Number.parseFloat(inputEndR.value);
+
+                [mouseEndX, mouseEndY] = getPointerPosition(ev);
+
+                const x = (startR + ((endR - startR) * mouseEndX / canvas.width)).toFixed(precision);
+                // TODO scale for startX/endX too!
+                const y = ((canvas.height - mouseEndY) / canvas.height).toFixed(precision);
+
+                document.getElementById('coords').innerHTML=`${x}, ${y}`;
+
+                if (showBox) {
+                    ctx.putImageData(canvasData, 0, 0);
+                    ctx.setLineDash([4, 4]);
+                    ctx.strokeStyle = 'red';
+                    ctx.lineWidth = 0.5;
+                    ctx.strokeRect(mouseStartX, mouseStartY, (mouseEndX - mouseStartX), (mouseEndY - mouseStartY));
+                    ctx.lineWidth = 0.1;
+                }
+            }
+
+            function getPointerPosition(ev) {
+                return [ev.clientX - canvas.getBoundingClientRect().left, ev.clientY - canvas.getBoundingClientRect().top];
+            }
+
+            function mousedown(ev) {
+                canvasData = ctx.getImageData(0, 0, canvas.width, canvas.height),
+                [mouseStartX, mouseStartY] = getPointerPosition(ev);
+                showBox = true;
+            }
+
+            function mouseup(ev) {
+                const startR = Number.parseFloat(inputStartR.value),
+                      endR = Number.parseFloat(inputEndR.value);
+
+                ctx.putImageData(canvasData, 0, 0);
+                showBox = false;
+
+                const newStartR = (startR + ((endR - startR) * mouseStartX / canvas.width)).toFixed(precision);
+                const newEndR = (startR + ((endR - startR) * mouseEndX / canvas.width)).toFixed(precision);
+                // TODO scale after second drag select - axis no longer from 0 to 1.0!
+                const newStartX = 1 - (mouseStartY / canvas.height).toFixed(precision);
+                const newEndX = 1 - (mouseEndY / canvas.height).toFixed(precision);
+
+                if (newEndR === newStartR || newStartX === newEndX) {
+                    return;
+                }
+                if (newEndR > newStartR) {
+                    inputStartR.value = newStartR;
+                    inputEndR.value = newEndR;
+                } else {
+                    inputEndR.value = newStartR;
+                    inputStartR.value = newEndR;
+                }
+                if (newEndX < newStartX) {
+                    inputStartX.value = newEndX;
+                    inputEndX.value = newStartX;
+                } else {
+                    inputEndX.value = newEndX;
+                    inputStartX.value = newStartX;
+                }
+
+                draw();
+            }
+
+            function redraw(event) {
+                event.preventDefault();
+                checkInputs();
+                draw();
+            }
+
+            function reset(event) {
+                event.preventDefault();
+                inputStartR.value = '2.8';
+                inputEndR.value = '4.0';
+                inputStartX.value = '0.0';
+                inputEndX.value = '1.0';
+                draw();
+            }
+
+            function init() {
+                canvas = document.getElementById('bifurcation');
+                ctx = canvas.getContext('2d');
+                inputStartR = document.querySelector('input[name="startr"]');
+                inputEndR = document.querySelector('input[name="endr"]');
+                inputStartX = document.querySelector('input[name="startx"]');
+                inputEndX = document.querySelector('input[name="endx"]');
+
+                canvas.addEventListener('mousemove', mousemove);
+                canvas.addEventListener('mousedown', mousedown);
+                canvas.addEventListener('mouseup', mouseup);
+                document.getElementById('draw').addEventListener('click', redraw);
+                document.getElementById('reset').addEventListener('click', reset);
+
+                draw();
+            }
+        </script>
+   </head>
+   
+   <body onload="init();">
+        <a href="../index.html">Home</a>
+
+        <h1>The logistics map</h1>
+        <p>Chaos and the bifurcation diagram.</p>
+
+        <canvas id="bifurcation" width="800" height="600">
+            In this area, modern visual browsers with Javascript enabled will show a <a href="https://en.wikipedia.org/wiki/Bifurcation_diagram">bifurcation diagram</a> of the logistics map.
+        </canvas>
+
+        <form>
+            Start r: <input type="text" name="startr" value="2.8" pattern="[0-9\.]+" title="Starting r value should be a number between 0 and 4.0">
+            End r: <input type="text" name="endr" value="4.0" pattern="[0-9\.]+" title="Ending r value should be a number between 0 and 4.0">
+            Start x: <input type="text" name="startx" value="0.0" pattern="[0-9\.]+" title="Starting x value should be a number between 0 and 1.0">
+            End x: <input type="text" name="endx" value="1.0" pattern="[0-9\.]+" title="Ending x value should be a number between 0 and 1.0">
+            <button id="draw">Draw</button>
+            <button id="reset">Reset</button>
+            <span id="coords">0,0</span>
+        </form>
+   </body>
+	
+</html>
